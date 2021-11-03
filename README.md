@@ -1,0 +1,2 @@
+记录每一段gene的fitness，每次mutation操作只会交换两个基因，
+因此只需要对两个基因段重新计算fitness，从而实现简化运算
