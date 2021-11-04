@@ -29,10 +29,6 @@ def data_generate(filename='in.txt'):
     return nodes, cars, dis
 
 
-k1 = 100
-k2 = 1
-k3 = 1
-
 model = PointerNet(embedding_dim=256,
                    hidden_dim=512,
                    gru_layers=3,
@@ -52,11 +48,11 @@ class Chrom:
         Initiate the Chrom class.
 
         """
-        self.mileage = np.zeros(self.n_car)
-        self.load = np.zeros(self.n_car)
-        self.nodes_in_car = []
-        self.travel_time = [0 for _ in range(self.n_car)]
-        self.sum_weight = sum(self.nodes[:, 2])
+        self.mileage = np.zeros(self.n_car)  # useless
+        self.load = np.zeros(self.n_car)  # useless
+        self.nodes_in_car = []  # 每辆车的序列
+        self.travel_time = [0 for _ in range(self.n_car)]  # 每辆车的总时间（length * weight）
+        self.sum_weight = sum(self.nodes[:, 2])  # weight即总乘客数
         self.all_time = 0
         self.valid = True
         self.used_cars = 0
@@ -80,22 +76,28 @@ class Chrom:
             if not per_car == [0]:
                 self.used_cars += 1
 
-        self.cars_changed = []
+        self.cars_changed = []  # 表明每次mutation改变的车号
 
         nodes_features = [self.nodes[_nodes, :] for _nodes in self.nodes_in_car]
 
+        # 将不规则list用0填充
         length = max(map(len, nodes_features))
         batch_nodes_arr = np.zeros((self.used_cars, length, 3))
         for i in range(self.used_cars):
             batch_nodes_arr[i, :, :] = np.vstack((nodes_features[i], np.repeat(self.nodes[0][np.newaxis, :], length-len(nodes_features[i]), axis=0)))
         batch_nodes = np.array(batch_nodes_arr)
-        # matrix = np.array([node+[0, 0, 0]*(length-len(node)) for node in nodes_features])
-        batch_nodes = torch.tensor(batch_nodes, dtype=torch.float32).cuda()
-        o, solutions = model(batch_nodes)
+
+        with torch.no_grad():
+            batch_nodes = torch.tensor(batch_nodes, dtype=torch.float32, requires_grad=False).cuda()
+            o, solutions = model(batch_nodes)
+
+        solutions = solutions.cpu().numpy()
+
         for i in range(self.used_cars):
             solution = solutions[i][solutions[i] < nodes_features[i].shape[0]]
             self.getTime(i, solution)
         self.all_time = sum(self.travel_time) / self.sum_weight
+
         self.update()
 
     def update(self):
@@ -110,32 +112,51 @@ class Chrom:
                 if load > self.cars[index, 0]:
                     self.valid = False
                     return
-            # self.travel_time[index] = model(self.nodes_in_car[index])
 
         self.valid = True
 
     def mutation(self):
         i, j = np.random.choice(range(self.n_car), 2, replace=False)
+        is_additional_car = False
+        if i >= self.used_cars:
+            j = np.random.randint(0, self.used_cars)
+            self.used_cars += 1
+            is_additional_car = True
+        elif j >= self.used_cars:
+            i = np.random.randint(0, self.used_cars)
+            self.used_cars += 1
+            is_additional_car = True
 
-        length = np.random.randint(1, min(len(self.nodes_in_car[i]), len(self.nodes_in_car[j])))
-        i_begin = np.random.randint(1, len(self.nodes_in_car[i]) - length + 1)
-        j_begin = np.random.randint(1, len(self.nodes_in_car[j]) - length + 1)
+        t_nodes_i, t_nodes_j = self.nodes_in_car[i], self.nodes_in_car[j]
+        length_i = np.random.randint(0, len(self.nodes_in_car[i]))
+        length_j = np.random.randint(0, len(self.nodes_in_car[j]))
 
-        self.nodes_in_car[i][i_begin:i_begin + length], self.nodes_in_car[j][j_begin:j_begin + length] = \
-            self.nodes_in_car[j][j_begin:j_begin + length], self.nodes_in_car[i][i_begin:i_begin + length]
+        i_begin = np.random.randint(1, len(self.nodes_in_car[i]) - length_i + 1)
+        j_begin = np.random.randint(1, len(self.nodes_in_car[j]) - length_j + 1)
+
+        i_seg = self.nodes_in_car[i][i_begin:i_begin+length_i]
+        j_seg = self.nodes_in_car[j][j_begin:j_begin+length_j]
+
+        del self.nodes_in_car[i][i_begin:i_begin+length_i]
+        del self.nodes_in_car[j][j_begin:j_begin+length_j]
+
+        self.nodes_in_car[i] += j_seg
+        self.nodes_in_car[j] += i_seg
 
         self.cars_changed = [i, j]
 
         self.update()
         if not self.valid:
-            self.nodes_in_car[i][i_begin:i_begin + length], self.nodes_in_car[j][j_begin:j_begin + length] = \
-                self.nodes_in_car[j][j_begin:j_begin + length], self.nodes_in_car[i][i_begin:i_begin + length]
+            self.nodes_in_car[i], self.nodes_in_car[j] = t_nodes_i, t_nodes_j
+
             self.valid = True
+            if is_additional_car:
+                self.used_cars -= 1
 
     def fitness(self):
         if not self.valid:
             return 1e8
-        return self.all_time
+        return sum(self.travel_time) / self.sum_weight
 
     def decode(self):
         pass
@@ -147,22 +168,21 @@ class Chrom:
         nodes = self.nodes[node_idx]
         locations = nodes[:, :2]
         weights = nodes[:, 2]
-        sequence = list(sequence)
+        sequence = sequence.tolist()
 
         if sequence[0] != 0:
             sequence.insert(0, 0)
         num = len(sequence)
         for i in range(1, num):
             length += np.linalg.norm(locations[sequence[i]] - locations[sequence[i - 1]])
-            per_car_time += weights[sequence[i] - 1] * length
-        if self.all_time < 0:
-            print('Wrong')
+            per_car_time += weights[sequence[i]] * length
+
         self.travel_time[car_number] = per_car_time
 
 
 class VRP:
     def __init__(self):
-        self.depot = np.array([14.36, 8.22, 0])
+        self.depot = np.array([14.36, 8.22, 0])  # TODO 写的更优美一点
 
     def solve(self):
 
@@ -185,12 +205,12 @@ class VRP:
             else:
                 cnt += 1
 
-            if cnt >= 1000:
+            if cnt >= 500:
                 break
 
             x = len(chroms) // 2
             for i in range(x, len(chroms)):
-                chroms[i] = copy.copy(chroms[i - x])
+                chroms[i] = copy.deepcopy(chroms[i - x])
 
                 chroms[i].mutation()
 
@@ -199,24 +219,32 @@ class VRP:
                 cars_to_solve.append(chroms[i].nodes_in_car[chroms[i].cars_changed[0]])
                 cars_to_solve.append(chroms[i].nodes_in_car[chroms[i].cars_changed[1]])
 
+            # 将不规则list用0填充
             length = max(map(len, cars_to_solve))
             nodes_in_batch_arr = np.zeros((len(cars_to_solve), length, 3))
-            nodes_index = [car+[0]*(length - len(car)) for car in cars_to_solve]
+            nodes_index = [car+[0]*(length - len(car)) for car in cars_to_solve]  # 不足的补0
+
             for i in range(len(cars_to_solve)):
                 nodes_in_batch_arr[i, :, :] = chroms[i].nodes[nodes_index[i]]
-            nodes_in_batch = torch.tensor(nodes_in_batch_arr, dtype=torch.float).cuda()
-            o, p = model(nodes_in_batch)
+
+            with torch.no_grad():
+                nodes_in_batch = torch.tensor(nodes_in_batch_arr, dtype=torch.float, requires_grad=False).cuda()
+                o, p = model(nodes_in_batch)
+
             del o
-            p = p.data.cpu().numpy()
-            gc.collect()
+            p = p.cpu().numpy()
+
             for i in range(x, len(chroms)):
-                solution = p[2 * (i - 500)]
+                _solution_1 = p[2 * (i - 500)]
                 car_num_1 = chroms[i].cars_changed[0]
-                solution_1 = solution[solution < len(chroms[i].nodes_in_car[car_num_1])]
+                solution_1 = _solution_1[_solution_1 < len(chroms[i].nodes_in_car[car_num_1])]
+
                 chroms[i].getTime(car_num_1, solution_1)
-                solution = p[2 * (i - 500) + 1]
+
+                _solution_2 = p[2 * (i - 500) + 1]
                 car_num_2 = chroms[i].cars_changed[1]
-                solution_2 = solution[solution < len(chroms[i].nodes_in_car[car_num_2])]
+                solution_2 = _solution_2[_solution_2 < len(chroms[i].nodes_in_car[car_num_2])]
+
                 chroms[i].getTime(car_num_2, solution_2)
 
                 chroms[i].all_time = sum(chroms[i].travel_time) / chroms[i].sum_weight
