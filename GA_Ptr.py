@@ -1,5 +1,5 @@
 import copy
-import gc
+import heapq
 import numpy as np
 import time
 import torch
@@ -16,7 +16,7 @@ def data_generate(filename='in.txt'):
         f.readline()
         n_car = int(f.readline().strip('\n'))
         for i in range(n_car):
-            cars.append([int(x) for x in f.readline().strip('\n').split(" ")])
+            cars.append([float(x) for x in f.readline().strip('\n').split(" ")])
 
     nodes = np.array(nodes)
     cars = np.array(cars)
@@ -39,7 +39,8 @@ model = model.cuda()
 
 
 class Chrom:
-    nodes, cars, dis = data_generate()
+    nodes, cars, dis = data_generate(filename='./Datasets/Nodes-100-Orders-600.txt')
+    max_dis = dis.max()
     n_car = cars.shape[0]
     n_node = nodes.shape[0] - 1
 
@@ -51,7 +52,9 @@ class Chrom:
         self.mileage = np.zeros(self.n_car)  # useless
         self.load = np.zeros(self.n_car)  # useless
         self.nodes_in_car = []  # 每辆车的序列
-        self.travel_time = [0 for _ in range(self.n_car)]  # 每辆车的总时间（length * weight）
+        self.weights_in_car = np.zeros(self.n_car)
+        self.fitness_list = [0 for _ in range(self.n_car)]
+        self.travel_time = np.zeros(self.n_car) # 每辆车的总时间（length * weight）
         self.sum_weight = sum(self.nodes[:, 2])  # weight即总乘客数
         self.all_time = 0
         self.valid = True
@@ -96,8 +99,8 @@ class Chrom:
         for i in range(self.used_cars):
             solution = solutions[i][solutions[i] < nodes_features[i].shape[0]]
             self.getTime(i, solution)
-        self.all_time = sum(self.travel_time) / self.sum_weight
 
+        self.all_time = sum(self.travel_time) / self.sum_weight
         self.update()
 
     def update(self):
@@ -127,7 +130,7 @@ class Chrom:
             self.used_cars += 1
             is_additional_car = True
 
-        t_nodes_i, t_nodes_j = self.nodes_in_car[i], self.nodes_in_car[j]
+        t_nodes_i, t_nodes_j = copy.deepcopy(self.nodes_in_car[i]), copy.deepcopy(self.nodes_in_car[j])
         length_i = np.random.randint(0, len(self.nodes_in_car[i]))
         length_j = np.random.randint(0, len(self.nodes_in_car[j]))
 
@@ -156,7 +159,12 @@ class Chrom:
     def fitness(self):
         if not self.valid:
             return 1e8
-        return sum(self.travel_time) / self.sum_weight
+        car_chosen = heapq.nlargest(10, range(len(self.fitness_list)), self.fitness_list.__getitem__)
+        per_time = sum(self.travel_time[car_chosen]) / (sum(self.weights_in_car[car_chosen]) * self.sum_weight)
+        fitness = sum(self.weights_in_car[car_chosen])*2/3 + 4/3*(self.max_dis - per_time) / self.max_dis
+        # tmp_fitness = sorted(self.fitness_list, reverse=True)
+        return fitness
+        # return sum(self.travel_time) / self.sum_weight
 
     def decode(self):
         pass
@@ -177,14 +185,23 @@ class Chrom:
             length += np.linalg.norm(locations[sequence[i]] - locations[sequence[i - 1]])
             per_car_time += weights[sequence[i]] * length
 
-        self.travel_time[car_number] = per_car_time
+        self.travel_time[car_number] = per_car_time  # 不确定是否有效
+        self.weights_in_car[car_number] = sum(weights) / self.sum_weight  # 满足率
+        max_avg_travel_time = length
+        if max_avg_travel_time == 0:
+            self.fitness_list[car_number] = 0
+        else:
+            self.fitness_list[car_number] = self.weights_in_car[car_number]*10 + (max_avg_travel_time - self.travel_time[car_number]/sum(weights)) / max_avg_travel_time
 
 
 class VRP:
     def __init__(self):
-        self.depot = np.array([14.36, 8.22, 0])  # TODO 写的更优美一点
+        self.depot = np.array([0.11, 0.09, 0.00])  # TODO 写的更优美一点
 
     def solve(self):
+        all_fitness = []
+        fullfillments = []
+        avg_travel_time_list = []
 
         chroms = []
         while len(chroms) < 1000:
@@ -194,18 +211,19 @@ class VRP:
         cnt = 0
         numGeneration = 0
         best = Chrom()
+        print(best.max_dis)
 
         while True:
             numGeneration += 1
-            chroms.sort(key=lambda x: x.fitness())
+            chroms.sort(key=lambda x: x.fitness(), reverse=True)
 
-            if chroms[0].fitness() < best.fitness():
+            if chroms[0].fitness() > best.fitness():
                 best = chroms[0]
                 cnt = 0
             else:
                 cnt += 1
 
-            if cnt >= 500:
+            if cnt >= 800:
                 break
 
             x = len(chroms) // 2
@@ -249,7 +267,29 @@ class VRP:
 
                 chroms[i].all_time = sum(chroms[i].travel_time) / chroms[i].sum_weight
 
+            car_chosen = heapq.nlargest(10, range(len(best.fitness_list)), best.fitness_list.__getitem__)
+            per_time = sum(best.travel_time[car_chosen]) / (sum(best.weights_in_car[car_chosen]) * best.sum_weight)
+            fullfillment = sum(best.weights_in_car[car_chosen])
+            fitness = fullfillment + (best.max_dis - per_time) / best.max_dis
+
+            all_fitness.append(fitness)
+            fullfillments.append(fullfillment)
+            avg_travel_time_list.append(per_time)
+
             print("Generation {} fitness {}".format(numGeneration, best.fitness()))
+
+            # if best.fitness() > 1.15:
+            #     car_chosen = heapq.nlargest(10, range(len(best.fitness_list)), best.fitness_list.__getitem__)
+            #     per_time = sum(best.travel_time[car_chosen]) / (sum(best.weights_in_car[car_chosen]) * best.sum_weight)
+            #     print(sum(best.weights_in_car[car_chosen]))
+
+        filename = 'data/Order-600-Car-10-a.txt'
+        iteration = len(all_fitness)
+
+        with open(filename, 'w') as f:
+            f.write(str(iteration))
+            for i in range(iteration):
+                f.write('\n{:.4f} {:.4f} {:.4f}'.format(all_fitness[i], fullfillments[i], avg_travel_time_list[i]))
 
 
 if __name__ == '__main__':
