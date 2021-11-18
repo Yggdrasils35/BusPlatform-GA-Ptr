@@ -161,10 +161,9 @@ class Chrom:
             return 1e8
         car_chosen = heapq.nlargest(10, range(len(self.fitness_list)), self.fitness_list.__getitem__)
         per_time = sum(self.travel_time[car_chosen]) / (sum(self.weights_in_car[car_chosen]) * self.sum_weight)
+        # per_time = sum(self.travel_time)/self.sum_weight
         fitness = sum(self.weights_in_car[car_chosen])*2/3 + 4/3*(self.max_dis - per_time) / self.max_dis
-        # tmp_fitness = sorted(self.fitness_list, reverse=True)
         return fitness
-        # return sum(self.travel_time) / self.sum_weight
 
     def decode(self):
         pass
@@ -215,9 +214,9 @@ class VRP:
 
         while True:
             numGeneration += 1
-            chroms.sort(key=lambda x: x.fitness(), reverse=True)
+            chroms.sort(key=lambda x: x.fitness())
 
-            if chroms[0].fitness() > best.fitness():
+            if chroms[0].fitness() < best.fitness():
                 best = chroms[0]
                 cnt = 0
             else:
@@ -278,18 +277,13 @@ class VRP:
 
             print("Generation {} fitness {}".format(numGeneration, best.fitness()))
 
-            # if best.fitness() > 1.15:
-            #     car_chosen = heapq.nlargest(10, range(len(best.fitness_list)), best.fitness_list.__getitem__)
-            #     per_time = sum(best.travel_time[car_chosen]) / (sum(best.weights_in_car[car_chosen]) * best.sum_weight)
-            #     print(sum(best.weights_in_car[car_chosen]))
+        # filename = 'data/CVRP-100-per.txt'
+        # iteration = len(all_fitness)
 
-        filename = 'data/Order-600-Car-10-a.txt'
-        iteration = len(all_fitness)
-
-        with open(filename, 'w') as f:
-            f.write(str(iteration))
-            for i in range(iteration):
-                f.write('\n{:.4f} {:.4f} {:.4f}'.format(all_fitness[i], fullfillments[i], avg_travel_time_list[i]))
+        # with open(filename, 'w') as f:
+        #     f.write(str(iteration))
+        #     for i in range(iteration):
+        #         f.write('\n{:.4f} {:.4f} {:.4f}'.format(all_fitness[i], fullfillments[i], avg_travel_time_list[i]))
 
 
 if __name__ == '__main__':
