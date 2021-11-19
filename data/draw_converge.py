@@ -17,7 +17,7 @@ with open(filename) as f:
         fitness = float(line)
         all_fitness.append(fitness)
 
-filename = '../Datasets/CVRP-100-GA.txt'
+filename = 'Results/CVRP-100-GA.txt'
 with open(filename) as f:
     length = int(f.readline().strip('\n'))
     for i in range(length):

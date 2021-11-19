@@ -1,2 +1,29 @@
-记录每一段gene的fitness，每次mutation操作只会交换两个基因，
-因此只需要对两个基因段重新计算fitness，从而实现简化运算
+# BusPlatform-GA-Ptr
+The project proposes an algorithm combined with Genetic Algorithm and Pointer Network to solve multi-object CVRP.
+
+## Usage
+To train your own Pointer Network, run
+
+`
+python train.py
+`
+
+To test your network performance, run
+
+`
+python test.py
+`
+
+The GA part we change the usual mutation process, instead we record the two gene which is exchanged in per chromosome
+during per iteration.
+
+And after all chromosomes have been mutated, we throw all the genes into the network for batch-processing for faster
+processing speed.
+
+To use this GA-Ptr algorithm, you can change the data file path and just run the GA-Ptr.py script.
+
+Also we include the benchmark Genetic Algorithm for comparison. All the codes are in the folder GA_baseline.
+
+## Requirements
+- Python >= 3.6
+- Pytorch==1.9.0
