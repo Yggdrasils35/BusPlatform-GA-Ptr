@@ -102,6 +102,10 @@ def main():
         losses.append(mean_loss)
         iterator.set_postfix(loss=mean_loss)
 
+    torch.save(model.state_dict(), './Parameters/GRU128-200.pkl')
+    plt.plot(losses)
+    plt.show()
+
 
 if __name__ == '__main__':
     main()
