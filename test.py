@@ -9,8 +9,8 @@ from torch.utils.data import DataLoader
 import numpy as np
 import argparse
 
-from PointerNet import PointerNet
-from Data_Generator import get_cost
+from models.PointerNet import PointerNet
+from utils.Data_generator import get_cost
 
 import matplotlib.pyplot as plt
 
@@ -104,7 +104,7 @@ def main():
         depot = depot[np.newaxis, :]
         nodes = point[1:]
         solution = solutions[i]
-        weights = points[:, 2]
+        weights = point[:, 2]
         cost = get_cost(depot, nodes, solution)
 
         solution_opt = solutions_opt[i]

@@ -27,3 +27,8 @@ Also we include the benchmark Genetic Algorithm for comparison. All the codes ar
 ## Requirements
 - Python >= 3.6
 - Pytorch==1.9.0
+
+## Reference
+- Pointer Network: https://github.com/shirgur/PointerNet
+- Genetic Algorithm: `./GA_baseline/`
+- L2i: The L2i method is implemented in tensorflow 1.x, so Colab may be a better choice to run code.
